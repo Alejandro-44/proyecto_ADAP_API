@@ -6,7 +6,11 @@ from app.routers import auth, admin, users, evaluation
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 
-app = FastAPI()
+app = FastAPI(
+    title="ADAP API",
+    description="API para el sistema de evaluación ADAP",
+    version="1.0"
+)
 
 models.Base.metadata.create_all(bind=engine)
 
