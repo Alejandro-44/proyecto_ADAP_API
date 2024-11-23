@@ -13,9 +13,10 @@ class Company(Base):
     company_name = Column(String, unique=True, nullable=False)
     phone_number = Column(String)
     is_active = Column(Boolean, default=True)
+    country_of_residence = Column(String, nullable=True)  # Nuevo campo para el país
 
     employees = relationship("Employee", back_populates="company")
-    evaluations = relationship("Evaluation", back_populates="company")  # Definir relación con Evaluation
+    evaluations = relationship("Evaluation", back_populates="company")  # Relación con Evaluation
 
 
 class Employee(Base):
@@ -30,7 +31,7 @@ class Employee(Base):
     first_name = Column(String, nullable=False)  # Nombres
     last_name = Column(String, nullable=False)  # Apellidos
     nationality = Column(String, nullable=True)  # Nacionalidad
-    document_id = Column(String, unique=True, nullable=False)  # Documento de identidad
+    document_id = Column(String, unique=False, nullable=True)  # Documento de identidad
     phone_number = Column(String, nullable=True)  # Número telefónico
     gender = Column(String, nullable=True)  # Género (Ej. "Masculino", "Femenino", "Otro")
     birth_date = Column(String, nullable=True)  # Fecha de nacimiento
