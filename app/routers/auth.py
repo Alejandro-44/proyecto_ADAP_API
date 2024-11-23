@@ -30,20 +30,22 @@ oauth2_bearer = OAuth2PasswordBearer(tokenUrl="auth/token")
 class CompanyCreate(BaseModel):
     username: str = Field(..., min_length=3, max_length=50)
     email: EmailStr
-    company_name: str = Field(..., min_length=2, max_length=100)
     password: str = Field(..., min_length=6)
-    phone_number: Optional[str] = Field(None, pattern="^\+?[0-9\s]*$")
+    company_name: str = Field(..., min_length=2, max_length=100)
+    phone_number: str = Field(None, regex="^\+?[0-9\s]*$")
     is_active: bool = Field(default=True)
+    country_of_residence: str = Field(None, description="Country where the company is located")
 
     class Config:
-        json_schema_extra = {
+        schema_extra = {
             "example": {
                 "username": "tech_corp",
                 "email": "contact@techcorp.com",
-                "company_name": "Tech Corp",
                 "password": "securepassword",
+                "company_name": "Tech Corp",
                 "phone_number": "+1234567890",
-                "is_active": True
+                "is_active": True,
+                "country_of_residence": "United States"
             }
         }
 
@@ -51,24 +53,44 @@ class CompanyCreate(BaseModel):
 class EmployeeCreate(BaseModel):
     username: str = Field(..., min_length=3, max_length=50)
     email: EmailStr
+    password: str = Field(..., min_length=6)
     first_name: str = Field(..., min_length=1, max_length=50)
     last_name: str = Field(..., min_length=1, max_length=50)
-    password: str = Field(..., min_length=6)
-    phone_number: Optional[str] = Field(None, pattern="^\+?[0-9\s]*$")
-    company_id: int = Field(..., description="ID of the company to which the employee belongs")
+    nationality: Optional[str] = None
+    document_id: str = Field(..., description="Unique ID for employee (e.g., passport, national ID)")
+    phone_number: Optional[str] = None
+    gender: Optional[str] = Field(None, description="Gender of the employee")
+    birth_date: Optional[str] = Field(None, description="Date of birth (YYYY-MM-DD)")
+    city_of_residence: Optional[str] = None
+    country_of_residence: Optional[str] = None
+    profession: Optional[str] = None
+    position: Optional[str] = None
+    is_entrepreneur: Optional[bool] = False
+    entrepreneurship_name: Optional[str] = None
     is_active: bool = Field(default=True)
+    company_id: int = Field(..., description="ID of the company to which the employee belongs")
 
     class Config:
-        json_schema_extra = {
+        schema_extra = {
             "example": {
                 "username": "john_doe",
-                "email": "johndoe@techcorp.com",
+                "email": "johndoe@example.com",
+                "password": "securepassword123",
                 "first_name": "John",
                 "last_name": "Doe",
-                "password": "anothersecurepassword",
-                "phone_number": "+0987654321",
-                "company_id": 1,
-                "is_active": True
+                "nationality": "American",
+                "document_id": "123456789",
+                "phone_number": "+1234567890",
+                "gender": "Male",
+                "birth_date": "1990-01-01",
+                "city_of_residence": "New York",
+                "country_of_residence": "USA",
+                "profession": "Software Engineer",
+                "position": "Developer",
+                "is_entrepreneur": True,
+                "entrepreneurship_name": "Tech Solutions Inc.",
+                "is_active": True,
+                "company_id": 1
             }
         }
 
@@ -155,26 +177,29 @@ def is_username_email_taken(db: Session, username: str, email: str):
 
 @router.post('/company', status_code=status.HTTP_201_CREATED)
 def create_company(company: CompanyCreate, db: Session = Depends(get_db)):
-    if is_username_email_taken(db, company.username, company.email):
+    # Verificar si el username o email ya están registrados
+    if db.query(Company).filter(
+        (Company.username == company.username) | (Company.email == company.email)
+    ).first():
         raise HTTPException(status_code=400, detail="Username or email already registered")
 
     hashed_password = bycrypt_context.hash(company.password)
-    
+
     new_company = Company(
         username=company.username,
         email=company.email,
         hashed_password=hashed_password,
         company_name=company.company_name,
         phone_number=company.phone_number,
-        is_active=company.is_active
+        is_active=company.is_active,
+        country_of_residence=company.country_of_residence
     )
 
     db.add(new_company)
     db.commit()
     db.refresh(new_company)
-    
-    return {"message": f"Company {new_company.username} created successfully", "company_id": new_company.company_id}
 
+    return {"message": f"Company {new_company.username} created successfully", "company_id": new_company.company_id}
 
 @router.post('/employee', status_code=status.HTTP_201_CREATED)
 def create_employee(
@@ -200,15 +225,30 @@ def create_employee(
     if db.query(Employee).filter(Employee.email == employee.email).first():
         raise HTTPException(status_code=400, detail="Email already registered")
     
+    # Verificar si el documento ya está registrado
+    if db.query(Employee).filter(Employee.document_id == employee.document_id).first():
+        raise HTTPException(status_code=400, detail="Document ID already registered")
+
     hashed_password = bycrypt_context.hash(employee.password)
 
+    # Crear un nuevo empleado con todos los campos requeridos
     new_employee = Employee(
         username=employee.username,
         email=employee.email,
         hashed_password=hashed_password,
         first_name=employee.first_name,
         last_name=employee.last_name,
+        nationality=employee.nationality,
+        document_id=employee.document_id,
         phone_number=employee.phone_number,
+        gender=employee.gender,
+        birth_date=employee.birth_date,
+        city_of_residence=employee.city_of_residence,
+        country_of_residence=employee.country_of_residence,
+        profession=employee.profession,
+        position=employee.position,
+        is_entrepreneur=employee.is_entrepreneur,
+        entrepreneurship_name=employee.entrepreneurship_name if employee.is_entrepreneur else None,
         is_active=employee.is_active,
         company_id=employee.company_id
     )
@@ -250,3 +290,14 @@ async def company_only_route(current_user: dict = Depends(get_current_user)):
         )
     # Lógica específica para compañías
     return {"message": "Welcome, company!"}
+
+@router.get('/verify_token')
+async def verify_token(current_user: dict = Depends(get_current_user)):
+    """
+    Endpoint para verificar la validez del token y devolver información del usuario.
+    """
+    return {
+        "username": current_user["username"],
+        "user_id": current_user["user_id"],
+        "user_type": current_user["user_type"]
+    }
