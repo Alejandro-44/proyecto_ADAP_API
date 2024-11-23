@@ -65,41 +65,36 @@ async def get_companies(db: Session = Depends(get_db)):
     return companies
 
 
-@router.get("/companies/{company_id}/employees", response_model=List[EmployeeResponse], status_code=status.HTTP_200_OK)
-async def get_employees_by_company(
-    company_id: int,
+@router.get("/employees", response_model=List[EmployeeResponse], status_code=status.HTTP_200_OK)
+async def get_employees_of_current_company(
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user)
 ):
     """
-    Endpoint para obtener la lista de empleados de una compañía específica.
+    Endpoint para obtener la lista de empleados de la compañía del usuario autenticado.
     """
-    # Verificar que el usuario autenticado es de tipo 'company' o 'admin'
-    if current_user["user_type"] != "company" and current_user["user_role"] != "admin":
+    # Verificar que el usuario autenticado es de tipo 'company'
+    if current_user["user_type"] != "company":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access restricted to companies or admin users"
+            detail="Access restricted to company users"
         )
 
-    # Verificar que el usuario autenticado es dueño de la compañía solicitada (si es tipo 'company')
-    if current_user["user_type"] == "company" and current_user["user_id"] != company_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You can only view employees from your own company"
-        )
-
-    # Verificar si la compañía existe
+    # Obtener la compañía actual del usuario autenticado
+    company_id = current_user["user_id"]
     company = db.query(Company).filter(Company.company_id == company_id).first()
+    
     if not company:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Company not found")
 
-    # Obtener empleados de la compañía
+    # Obtener empleados de la compañía del usuario autenticado
     employees = db.query(Employee).filter(Employee.company_id == company_id).all()
     
     if not employees:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No employees found for this company")
 
     return employees
+
 
 @router.put("/companies/change-password", status_code=status.HTTP_204_NO_CONTENT)
 async def change_company_password(
