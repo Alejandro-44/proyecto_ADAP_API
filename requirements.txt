@@ -14,3 +14,4 @@ pytest-asyncio
 aiofiles
 jinja2
 pydantic[email]
+python-dotenv
