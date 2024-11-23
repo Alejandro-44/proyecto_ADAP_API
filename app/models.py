@@ -22,17 +22,38 @@ class Employee(Base):
     __tablename__ = 'employees'
 
     employee_id = Column(Integer, primary_key=True, index=True)
-    email = Column(String, unique=True, nullable=False)
+    email = Column(String, unique=True, nullable=False)  # Correo electrónico
     username = Column(String, unique=True, nullable=False)
     hashed_password = Column(String, nullable=False)
-    first_name = Column(String)
-    last_name = Column(String)
-    phone_number = Column(String)
-    is_active = Column(Boolean, default=True)
-    company_id = Column(Integer, ForeignKey('companies.company_id'))
 
+    # Información personal
+    first_name = Column(String, nullable=False)  # Nombres
+    last_name = Column(String, nullable=False)  # Apellidos
+    nationality = Column(String, nullable=True)  # Nacionalidad
+    document_id = Column(String, unique=True, nullable=False)  # Documento de identidad
+    phone_number = Column(String, nullable=True)  # Número telefónico
+    gender = Column(String, nullable=True)  # Género (Ej. "Masculino", "Femenino", "Otro")
+    birth_date = Column(String, nullable=True)  # Fecha de nacimiento
+
+    # Información de residencia
+    city_of_residence = Column(String, nullable=True)  # Ciudad de residencia
+    country_of_residence = Column(String, nullable=True)  # País de residencia
+
+    # Información profesional
+    profession = Column(String, nullable=True)  # Profesión
+    position = Column(String, nullable=True)  # Cargo actual
+
+    # Relación con la empresa
+    company_id = Column(Integer, ForeignKey('companies.company_id'))
     company = relationship("Company", back_populates="employees")
-    evaluations = relationship("Evaluation", back_populates="employee")  # Definir relación con Evaluation
+
+    # Información de emprendimiento
+    is_entrepreneur = Column(Boolean, default=False)  # Es emprendedor
+    entrepreneurship_name = Column(String, nullable=True)  # Nombre del emprendimiento (si aplica)
+
+    # Evaluaciones
+    is_active = Column(Boolean, default=True)
+    evaluations = relationship("Evaluation", back_populates="employee")  # Relación con Evaluaciones
 
 
 class Category(Base):
