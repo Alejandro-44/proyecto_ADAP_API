@@ -142,8 +142,8 @@ def calculate_autoliderazgo(evaluation_id: int, db: Session):
     F3 = get_response_score_by_code(evaluation_id, "Auto_4", db) * .0020
     F4 = get_response_score_by_code(evaluation_id, "Auto_7", db) * .1666
     F5 = sum(get_response_score_by_code(evaluation_id, code, db) * weight for code, weight in [
-        ("Auto_8", 8.67),
-        ("Auto_13", 10.36)
+        ("Auto_8", .0867),
+        ("Auto_13", .1036)
     ])
     
     E1 = F1 + F2 + F3 + F4 + F5
@@ -316,46 +316,58 @@ def get_evaluation(
     return evaluation_data
 
 @router.post("/assign", status_code=status.HTTP_201_CREATED)
-async def assign_evaluation(
-    employee_id: int,
+async def assign_evaluation_to_group(
+    employee_ids: List[int],  # Lista de IDs de empleados
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user)
 ):
     """
-    Endpoint para asignar una evaluación a un empleado específico. Solo las compañías pueden realizar esta acción.
+    Endpoint para asignar evaluaciones a un grupo de empleados.
+    Solo las compañías pueden realizar esta acción.
     """
-    # Verificar que el usuario autenticado es una compañía
+    # Verificar que el usuario autenticado es de tipo 'company'
     if current_user["user_type"] != "company":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only companies can assign evaluations"
         )
 
-    # Verificar que el empleado existe y pertenece a la compañía de la compañía autenticada
-    employee = db.query(Employee).filter(Employee.employee_id == employee_id).first()
-    if not employee:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Empleado no encontrado.")
-    
-    # Verificar que el empleado pertenece a la misma compañía que el usuario autenticado
-    if employee.company_id != current_user["user_id"]:
+    # Obtener la compañía actual del usuario autenticado
+    company_id = current_user["user_id"]
+
+    # Verificar que todos los empleados existen y pertenecen a la compañía autenticada
+    employees = db.query(Employee).filter(Employee.employee_id.in_(employee_ids)).all()
+    if len(employees) != len(employee_ids):
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You can only assign evaluations to employees in your own company"
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Some employees were not found"
         )
 
-    # Crear una nueva evaluación asignada al empleado y la compañía autenticada
-    new_evaluation = Evaluation(
-        employee_id=employee_id,
-        company_id=current_user["user_id"]
-    )
-    
-    db.add(new_evaluation)
+    for employee in employees:
+        if employee.company_id != company_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Employee {employee.employee_id} does not belong to your company"
+            )
+
+    # Crear evaluaciones para cada empleado
+    new_evaluations = []
+    for employee in employees:
+        new_evaluation = Evaluation(
+            employee_id=employee.employee_id,
+            company_id=company_id
+        )
+        db.add(new_evaluation)
+        new_evaluations.append(new_evaluation)
+
+    # Confirmar los cambios en la base de datos
     db.commit()
-    db.refresh(new_evaluation)
+
+    # Refrescar los objetos creados para obtener sus IDs
+    for evaluation in new_evaluations:
+        db.refresh(evaluation)
 
     return {
-        "message": "Evaluación asignada exitosamente.",
-        "evaluation_id": new_evaluation.id,
-        "employee_id": employee_id,
-        "company_id": current_user["user_id"]
+        "message": "Evaluaciones asignadas exitosamente.",
+        "evaluations": [{"evaluation_id": e.id, "employee_id": e.employee_id} for e in new_evaluations]
     }
