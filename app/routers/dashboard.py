@@ -1,3 +1,4 @@
+import os
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Path
 from .auth import get_current_user
 from jose import jwt
@@ -9,8 +10,8 @@ router = APIRouter(
     tags=['dashboard']
 )
 
-METABASE_SITE_URL = "http://adap-r2-production.up.railway.app"
-METABASE_SECRET_KEY = "0755b60bcd5edf45fd20aa39a158fdc8bd3ccda35bb7909413f9cac3aee5d79a"
+METABASE_SITE_URL = os.getenv("METABASE_SITE_URL")
+METABASE_SECRET_KEY = os.getenv("METABASE_SECRET_KEY")
  
 def generate_iframe_url(company):
    
