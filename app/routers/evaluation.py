@@ -1,12 +1,13 @@
 # standard packages
-from typing import Annotated, List
+from typing import Annotated, List, Optional
+from datetime import datetime, timedelta, timezone
 # third-party packages
-from fastapi import APIRouter, Depends, FastAPI, HTTPException, Path
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Path, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from starlette import status
 # local packages
-from app.models import CalculationResult, Category, Company, Employee, Evaluation, Question, Response
+from app.models import CalculationResult, Category, Company, Employee, EmployeeEvaluation,EvaluationTemplate, Question, Response
 from app.database import SessionLocal
 from .auth import get_current_user
 
@@ -33,7 +34,7 @@ class QuestionSchema(BaseModel):
     code: str
 
     class Config:
-        from_atributes = True
+        from_attributes = True
 
 
 class CategorySchema(BaseModel):
@@ -43,15 +44,19 @@ class CategorySchema(BaseModel):
     questions: List[QuestionSchema]
 
     class Config:
-        from_atributes = True
+        from_attributes = True
 
 
 class EvaluationRequestSchema(BaseModel):
     evaluation_id: int
+    title: str
+    assigned_date: str
+    due_date: Optional[str]
+    is_completed: bool
     categories: List[CategorySchema]
 
     class Config:
-        from_atributes = True
+        from_attributes = True
 
 
 class AnswerSchema(BaseModel):
@@ -114,15 +119,50 @@ class EvaluationResponseSchema(BaseModel):
             }
         }
 
+class CreateEvaluationTemplateRequest(BaseModel):
+    title: str
+    description: Optional[str] = None
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "title": "Employee Evaluation 2024",
+                "description": "This is the evaluation template for all employees in 2024."
+            }
+        }
+
+class AssignEvaluationRequest(BaseModel):
+    template_id: int
+    employee_ids: List[int]
+    due_date: datetime
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "template_id": 1,
+                "employee_ids": [101, 102, 103],
+                "due_date": "2024-12-31T23:59:59"
+            }
+        }
+
+class AssignedEvaluationResponse(BaseModel):
+    evaluation_id: int
+    title: str
+    assigned_date: Optional[str]
+    due_date: Optional[str]
+    completion_date: Optional[str]
+    is_completed: bool
+
+    class Config:
+        from_attributes = True
+
 
 # Funciones auxiliares de cálculo
 
-def get_response_score_by_code(evaluation_id: int, code: str, db: Session) -> int:
+def get_response_score_by_code(employee_evaluation_id: int, code: str, db: Session) -> int:
     # Buscar la respuesta que coincide con el código de la pregunta en la evaluación especificada
     response = (
         db.query(Response)
         .join(Question)
-        .filter(Response.evaluation_id == evaluation_id)
+        .filter(Response.employee_evaluation_id == employee_evaluation_id)
         .filter(Question.code == code)
         .first()
     )
@@ -130,25 +170,25 @@ def get_response_score_by_code(evaluation_id: int, code: str, db: Session) -> in
     # Retornar el puntaje si se encuentra la respuesta, o 0 si no existe
     return response.score if response else 0
 
-def calculate_autoliderazgo(evaluation_id: int, db: Session):
+def calculate_autoliderazgo(employee_evaluation_id: int, db: Session):
     # Obtener los puntajes de las respuestas de Autoliderazgo para cada subfactor
-    F1 = sum(get_response_score_by_code(evaluation_id, code, db) * weight for code, weight in [
+    F1 = sum(get_response_score_by_code(employee_evaluation_id, code, db) * weight for code, weight in [
         ("Auto_10", .2003),
         ("Auto_6", .1918),
         ("Auto_5", .1306),
         ("Auto_3", .124)
     ])
-    F2 = get_response_score_by_code(evaluation_id, "Auto_14", db) * .0137
-    F3 = get_response_score_by_code(evaluation_id, "Auto_4", db) * .0020
-    F4 = get_response_score_by_code(evaluation_id, "Auto_7", db) * .1666
-    F5 = sum(get_response_score_by_code(evaluation_id, code, db) * weight for code, weight in [
+    F2 = get_response_score_by_code(employee_evaluation_id, "Auto_14", db) * .0137
+    F3 = get_response_score_by_code(employee_evaluation_id, "Auto_4", db) * .0020
+    F4 = get_response_score_by_code(employee_evaluation_id, "Auto_7", db) * .1666
+    F5 = sum(get_response_score_by_code(employee_evaluation_id, code, db) * weight for code, weight in [
         ("Auto_8", .0867),
         ("Auto_13", .1036)
     ])
     
     E1 = F1 + F2 + F3 + F4 + F5
 
-    F6 = sum(get_response_score_by_code(evaluation_id, code, db) * weight for code, weight in [
+    F6 = sum(get_response_score_by_code(employee_evaluation_id, code, db) * weight for code, weight in [
         ("Auto_16", .3726),
         ("Auto_17", .3551),
         ("Auto_15", .2721)
@@ -156,14 +196,14 @@ def calculate_autoliderazgo(evaluation_id: int, db: Session):
 
     E2 = F6
 
-    F7 = sum(get_response_score_by_code(evaluation_id, code, db) * weight for code, weight in [
+    F7 = sum(get_response_score_by_code(employee_evaluation_id, code, db) * weight for code, weight in [
         ("Auto_1", .1846),
         ("Auto_11", .2267),
         ("Auto_12", .1903)
     ])
-    F8 = get_response_score_by_code(evaluation_id, "Auto_2", db) * .0641
+    F8 = get_response_score_by_code(employee_evaluation_id, "Auto_2", db) * .0641
 
-    F9 = sum(get_response_score_by_code(evaluation_id, code, db) * weight for code, weight in [
+    F9 = sum(get_response_score_by_code(employee_evaluation_id, code, db) * weight for code, weight in [
         ("Auto_9", .1846),
         ("Auto_18", .2267),
         ("Auto_19", .0892)
@@ -175,17 +215,17 @@ def calculate_autoliderazgo(evaluation_id: int, db: Session):
     return F1, F2, F3, F4, F5, E1, F6, E2, F7, F8, F9, E3, overall_selfleadership
 
 
-def calculate_desempeno(evaluation_id: int, db: Session):
+def calculate_desempeno(employee_evaluation_id: int, db: Session):
     # Calcular los subfactores de Desempeño
 
-    D1 = sum(get_response_score_by_code(evaluation_id, code, db) * weight for code, weight in [
+    D1 = sum(get_response_score_by_code(employee_evaluation_id, code, db) * weight for code, weight in [
         ("Des_2", .327),
         ("Des_3", .271),
         ("Des_1", .238),
         ("Des_4", .162)
     ])
 
-    D2 = sum(get_response_score_by_code(evaluation_id, code, db) * weight for code, weight in [
+    D2 = sum(get_response_score_by_code(employee_evaluation_id, code, db) * weight for code, weight in [
         ("Des_8", .1524),
         ("Des_9", .175),
         ("Des_7", .1301),
@@ -196,7 +236,7 @@ def calculate_desempeno(evaluation_id: int, db: Session):
         ("Des_5", .834),
     ])
 
-    D3 = sum(get_response_score_by_code(evaluation_id, code, db) * weight for code, weight in [
+    D3 = sum(get_response_score_by_code(employee_evaluation_id, code, db) * weight for code, weight in [
         ("Des_13", .1882),
         ("Des_14", .2051),
         ("Des_15", .2252),
@@ -210,9 +250,9 @@ def calculate_desempeno(evaluation_id: int, db: Session):
 
 
 
-def calculate_apoyo_organizacional(evaluation_id: int, db: Session):
+def calculate_apoyo_organizacional(employee_evaluation_id: int, db: Session):
     # Calcular Apoyo Organizacional Percibido
-    organizational_support_score = sum(get_response_score_by_code(evaluation_id, code, db) * weight for code, weight in [
+    organizational_support_score = sum(get_response_score_by_code(employee_evaluation_id, code, db) * weight for code, weight in [
         ("Apoyo_1", .1731),
         ("Apoyo_2", .1963),
         ("Apoyo_3", .1983),
@@ -231,21 +271,45 @@ def submit_evaluation_responses(
     db: Session = Depends(get_db)
 ):
     """
-    Endpoint para subir las respuestas de una evaluación y calcular los resultados derivados.
+    Endpoint para subir las respuestas de una evaluación asignada y calcular los resultados derivados.
     """
-    # Verificar si la evaluación existe
-    evaluation = db.query(Evaluation).filter(Evaluation.id == evaluation_data.evaluation_id).first()
-    if not evaluation:
-        raise HTTPException(status_code=404, detail="Evaluación no encontrada.")
+    # Verificar si la evaluación asignada existe
+    employee_evaluation = db.query(EmployeeEvaluation).filter(
+        EmployeeEvaluation.id == evaluation_data.evaluation_id
+    ).first()
+
+    if not employee_evaluation:
+        raise HTTPException(status_code=404, detail="Evaluación asignada no encontrada.")
+    
+    # Verificar si la evaluación ya está completada
+    if employee_evaluation.is_completed:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Esta evaluación ya ha sido completada."
+        )
+
     # Procesar y almacenar cada respuesta
     for answer in evaluation_data.answers:
         # Verificar si la pregunta existe
         question = db.query(Question).filter(Question.id == answer.question_id).first()
         if not question:
             raise HTTPException(status_code=404, detail=f"Pregunta con ID {answer.question_id} no encontrada.")
+        
+        # Verificar si la respuesta ya existe para evitar duplicados
+        existing_response = db.query(Response).filter(
+            Response.employee_evaluation_id == employee_evaluation.id,
+            Response.question_id == answer.question_id
+        ).first()
+
+        if existing_response:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Ya existe una respuesta para la pregunta con ID {answer.question_id}."
+            )
+
         # Crear una instancia de Response para cada respuesta
         response = Response(
-            evaluation_id=evaluation.id,
+            employee_evaluation_id=employee_evaluation.id,  # Relacionar con EmployeeEvaluation
             question_id=answer.question_id,
             score=answer.score
         )
@@ -254,13 +318,15 @@ def submit_evaluation_responses(
 
     # Confirmar los cambios en la base de datos
     db.commit()
+
     # Calcular los resultados basados en las respuestas
-    F1, F2, F3, F4, F5, E1, F6, E2, F7, F8, F9, E3, overall_selfleadership = calculate_autoliderazgo(evaluation.id, db)
-    D1, D2, D3, overall_performance_score = calculate_desempeno(evaluation.id, db)
-    organizational_support_score = calculate_apoyo_organizacional(evaluation.id, db)
+    F1, F2, F3, F4, F5, E1, F6, E2, F7, F8, F9, E3, overall_selfleadership = calculate_autoliderazgo(employee_evaluation.id, db)
+    D1, D2, D3, overall_performance_score = calculate_desempeno(employee_evaluation.id, db)
+    organizational_support_score = calculate_apoyo_organizacional(employee_evaluation.id, db)
+
     # Guardar los resultados en la tabla CalculationResult
     calculation_result = CalculationResult(
-        evaluation_id=evaluation.id,
+        employee_evaluation_id=employee_evaluation.id,  # Relacionar con EmployeeEvaluation
         F1=F1, F2=F2, F3=F3, F4=F4, F5=F5,
         E1=E1, F6=F6, E2=E2, F7=F7, F8=F8, F9=F9,
         E3=E3, overall_selfleadership=overall_selfleadership,
@@ -269,32 +335,187 @@ def submit_evaluation_responses(
     )
     # Agregar el resultado calculado a la sesión y confirmar los cambios
     db.add(calculation_result)
+
+    # Marcar la evaluación como completada y registrar la fecha de realización
+    employee_evaluation.is_completed = True
+    employee_evaluation.completion_date = datetime.now(timezone.utc)
     db.commit()
 
-    return {"message": "Respuestas de la evaluación guardadas exitosamente."}
+    return {
+        "message": "Respuestas de la evaluación guardadas exitosamente.",
+        "evaluation_id": employee_evaluation.id,
+        "results": {
+            "overall_selfleadership": overall_selfleadership,
+            "overall_performance_score": overall_performance_score,
+            "organizational_support_score": organizational_support_score
+        }
+    }
+
+@router.post("/template", status_code=status.HTTP_201_CREATED)
+def create_evaluation_template(
+    request: CreateEvaluationTemplateRequest,  # Usar el modelo de validación
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Crear una evaluación general para una compañía.
+    """
+    # Verificar que el usuario autenticado sea de tipo 'company'
+    if current_user["user_type"] != "company":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only companies can create evaluation templates."
+        )
+
+    # Obtener el ID de la compañía actual
+    company_id = current_user["user_id"]
+
+    # Crear la plantilla de evaluación
+    evaluation_template = EvaluationTemplate(
+        title=request.title,
+        description=request.description,
+        company_id=company_id
+    )
+
+    # Guardar la plantilla en la base de datos
+    db.add(evaluation_template)
+    db.commit()
+    db.refresh(evaluation_template)
+
+    return {
+        "message": "Evaluation template created successfully",
+        "template_id": evaluation_template.id
+    }
+
+@router.post("/assign", status_code=status.HTTP_201_CREATED)
+def assign_evaluation_to_employees(
+    request: AssignEvaluationRequest,  # Usar el modelo de validación
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Asignar una evaluación a empleados específicos.
+    Solo puede ser realizado por usuarios de tipo 'company'.
+    """
+    # Verificar que el usuario autenticado sea de tipo 'company'
+    if current_user["user_type"] != "company":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only companies can assign evaluations."
+        )
+
+    # Verificar que la plantilla de evaluación existe y pertenece a la compañía actual
+    template = db.query(EvaluationTemplate).filter(
+        EvaluationTemplate.id == request.template_id,
+        EvaluationTemplate.company_id == current_user["user_id"]
+    ).first()
+
+    if not template:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Evaluation template not found or does not belong to your company."
+        )
+
+    # Validar y asignar la evaluación a cada empleado
+    for employee_id in request.employee_ids:
+        # Verificar que el empleado existe y pertenece a la compañía actual
+        employee = db.query(Employee).filter(
+            Employee.employee_id == employee_id,
+            Employee.company_id == current_user["user_id"]
+        ).first()
+
+        if not employee:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Employee with ID {employee_id} not found or does not belong to your company."
+            )
+
+        # Crear y asignar la evaluación al empleado
+        employee_evaluation = EmployeeEvaluation(
+            employee_id=employee_id,
+            template_id=request.template_id,
+            due_date=request.due_date
+        )
+        db.add(employee_evaluation)
+
+    # Confirmar cambios en la base de datos
+    db.commit()
+
+    return {"message": "Evaluations assigned successfully."}
 
 
-@router.get("/{evaluation_id}", response_model=EvaluationRequestSchema)
-def get_evaluation(
-    evaluation_id: int,
+@router.get("/assigned", response_model=List[AssignedEvaluationResponse])
+def get_assigned_evaluations(
+    current_user: dict = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
-    Endpoint para obtener una evaluación con todas sus categorías y preguntas.
+    Endpoint para obtener la lista de evaluaciones asignadas al empleado autenticado.
     """
-    # Verificar si la evaluación existe
-    evaluation = db.query(Evaluation).filter(Evaluation.id == evaluation_id).first()
-    if not evaluation:
-        raise HTTPException(status_code=404, detail="Evaluación no encontrada.")
+    # Verificar que el usuario autenticado es un empleado
+    if current_user["user_type"] != "employee":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only employees can access their assigned evaluations."
+        )
 
-    # Obtener todas las categorías
+    # Obtener las evaluaciones asignadas al empleado actual desde EmployeeEvaluation
+    assigned_evaluations = db.query(EmployeeEvaluation).filter(
+        EmployeeEvaluation.employee_id == current_user["user_id"]
+    ).all()
+
+    # Construir la respuesta con los campos relevantes
+    evaluations = [
+        {
+            "evaluation_id": assigned_evaluation.id,
+            "title": assigned_evaluation.evaluation_template.title,  # Título desde EvaluationTemplate
+            "assigned_date": assigned_evaluation.assigned_date.isoformat() if assigned_evaluation.assigned_date else None,
+            "due_date": assigned_evaluation.due_date.isoformat() if assigned_evaluation.due_date else None,
+            "completion_date": assigned_evaluation.completion_date.isoformat() if assigned_evaluation.completion_date else None,
+            "is_completed": assigned_evaluation.is_completed
+        }
+        for assigned_evaluation in assigned_evaluations
+    ]
+
+    if not evaluations:
+        return []  # Devuelve una lista vacía si no hay evaluaciones asignadas
+
+    return evaluations
+
+@router.get("/get_evaluation/{employee_evaluation_id}", response_model=EvaluationRequestSchema)
+def get_evaluation(
+    employee_evaluation_id: int,
+    db: Session = Depends(get_db)
+):
+    """
+    Endpoint para obtener una evaluación asignada con sus categorías y preguntas.
+    """
+    # Verificar si la evaluación asignada existe
+    employee_evaluation = db.query(EmployeeEvaluation).join(EvaluationTemplate).filter(
+        EmployeeEvaluation.id == employee_evaluation_id
+    ).first()
+
+    if not employee_evaluation:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Evaluación asignada no encontrada."
+        )
+
+    # Obtener todas las categorías con sus preguntas
     categories = db.query(Category).all()
     if not categories:
-        raise HTTPException(status_code=404, detail="No se encontraron categorías para la evaluación.")
-    
-    # Serializar la evaluación y sus categorías
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No se encontraron categorías para la evaluación."
+        )
+
+    # Serializar la evaluación asignada y sus categorías/preguntas
     evaluation_data = {
-        "evaluation_id": evaluation.id,
+        "evaluation_id": employee_evaluation.id,
+        "title": employee_evaluation.evaluation_template.title,  # Obtener título desde EvaluationTemplate
+        "assigned_date": employee_evaluation.assigned_date.isoformat(),
+        "due_date": employee_evaluation.due_date.isoformat() if employee_evaluation.due_date else None,
+        "is_completed": employee_evaluation.is_completed,
         "categories": [
             {
                 "id": category.id,
@@ -306,7 +527,7 @@ def get_evaluation(
                         "text": question.text,
                         "code": question.code
                     }
-                    for question in category.questions
+                    for question in category.questions  # Obtener preguntas relacionadas
                 ]
             }
             for category in categories
@@ -315,59 +536,45 @@ def get_evaluation(
 
     return evaluation_data
 
-@router.post("/assign", status_code=status.HTTP_201_CREATED)
-async def assign_evaluation_to_group(
-    employee_ids: List[int],  # Lista de IDs de empleados
+
+@router.get("/incomplete", status_code=status.HTTP_200_OK)
+def get_incomplete_evaluations(
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user)
 ):
     """
-    Endpoint para asignar evaluaciones a un grupo de empleados.
-    Solo las compañías pueden realizar esta acción.
+    Endpoint para obtener todas las evaluaciones asignadas que no han sido completadas.
+    Incluye ID, título del template, empleado asignado, fecha de asignación y fecha límite.
     """
-    # Verificar que el usuario autenticado es de tipo 'company'
+    # Verificar que el usuario actual sea de tipo 'company'
     if current_user["user_type"] != "company":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only companies can assign evaluations"
+            detail="Only companies can access this endpoint."
         )
 
-    # Obtener la compañía actual del usuario autenticado
-    company_id = current_user["user_id"]
+    # Consultar las evaluaciones no completadas para la compañía actual
+    incomplete_evaluations = db.query(EmployeeEvaluation).join(EvaluationTemplate).filter(
+        EvaluationTemplate.company_id == current_user["user_id"],
+        EmployeeEvaluation.is_completed == False  # Filtrar las evaluaciones no completadas
+    ).all()
 
-    # Verificar que todos los empleados existen y pertenecen a la compañía autenticada
-    employees = db.query(Employee).filter(Employee.employee_id.in_(employee_ids)).all()
-    if len(employees) != len(employee_ids):
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Some employees were not found"
-        )
+    if not incomplete_evaluations:
+        return []  # Devolver una lista vacía si no hay evaluaciones no completadas
 
-    for employee in employees:
-        if employee.company_id != company_id:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Employee {employee.employee_id} does not belong to your company"
-            )
+    # Construir la respuesta con los campos solicitados
+    evaluations = [
+        {
+            "evaluation_id": evaluation.id,
+            "template_title": evaluation.evaluation_template.title,
+            "employee": {
+                "id": evaluation.employee.employee_id,
+                "name": f"{evaluation.employee.first_name} {evaluation.employee.last_name}"
+            },
+            "assigned_date": evaluation.assigned_date.isoformat() if evaluation.assigned_date else None,
+            "due_date": evaluation.due_date.isoformat() if evaluation.due_date else None
+        }
+        for evaluation in incomplete_evaluations
+    ]
 
-    # Crear evaluaciones para cada empleado
-    new_evaluations = []
-    for employee in employees:
-        new_evaluation = Evaluation(
-            employee_id=employee.employee_id,
-            company_id=company_id
-        )
-        db.add(new_evaluation)
-        new_evaluations.append(new_evaluation)
-
-    # Confirmar los cambios en la base de datos
-    db.commit()
-
-    # Refrescar los objetos creados para obtener sus IDs
-    for evaluation in new_evaluations:
-        db.refresh(evaluation)
-
-    return {
-        "message": "Evaluaciones asignadas exitosamente.",
-        "evaluations": [{"evaluation_id": e.id, "employee_id": e.employee_id} for e in new_evaluations]
-    }
+    return evaluations
