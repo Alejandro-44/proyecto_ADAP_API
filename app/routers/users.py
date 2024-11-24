@@ -1,4 +1,4 @@
-from typing import Annotated, List
+from typing import Annotated, List, Optional
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy.orm import Session
 from fastapi import APIRouter, Depends, HTTPException, Path
@@ -27,26 +27,43 @@ user_dependency = Annotated[dict, Depends(get_current_user)]
 bcrypt_context = CryptContext(schemes=['bcrypt'], deprecated='auto')
 
 
-class EmployeeResponse(BaseModel):
-    employee_id: int
-    username: str
-    email: EmailStr
-    first_name: str
-    last_name: str
-    phone_number: str
-
-    class Config:
-        from_attributes = True
-
+# Esquema para devolver información de la compañía
 class CompanyResponse(BaseModel):
     company_id: int
     username: str
-    email: EmailStr
+    email: str
     company_name: str
     phone_number: str
+    is_active: bool
+    country_of_residence: str
 
     class Config:
         from_attributes = True
+
+
+# Esquema para devolver información del empleado
+class EmployeeResponse(BaseModel):
+    employee_id: int
+    username: str
+    email: str
+    first_name: str
+    last_name: str
+    nationality: str
+    document_id: str
+    phone_number: str
+    gender: str
+    birth_date: str
+    city_of_residence: str
+    country_of_residence: str
+    profession: str
+    position: str
+    is_entrepreneur: bool
+    entrepreneurship_name: Optional[str] = None
+    is_active: bool
+
+    class Config:
+        from_attributes = True
+
 
 # Modelo de entrada para cambiar la contraseña
 class PasswordChangeRequest(BaseModel):
@@ -82,17 +99,19 @@ async def get_employees_of_current_company(
 
     # Obtener la compañía actual del usuario autenticado
     company_id = current_user["user_id"]
+
+    # Verificar que la compañía exista (esto es redundante, pero asegura consistencia)
     company = db.query(Company).filter(Company.company_id == company_id).first()
-    
     if not company:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Company not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, 
+            detail="Company not found"
+        )
 
-    # Obtener empleados de la compañía del usuario autenticado
+    # Obtener empleados de la compañía
     employees = db.query(Employee).filter(Employee.company_id == company_id).all()
-    
-    if not employees:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No employees found for this company")
 
+    # Retornar una lista vacía si no hay empleados en la compañía
     return employees
 
 
@@ -155,3 +174,43 @@ async def change_employee_password(
     employee.hashed_password = bcrypt_context.hash(password_data.new_password)
     db.add(employee)
     db.commit()
+
+@router.get("/me", response_model=dict, status_code=status.HTTP_200_OK)
+def get_current_user_info(
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Endpoint para obtener la información del usuario actual (compañía o empleado).
+    """
+    user_id = current_user["user_id"]
+    user_type = current_user["user_type"]
+
+    if user_type == "company":
+        user = db.query(Company).filter(Company.company_id == user_id).first()
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Compañía no encontrada"
+            )
+        return {
+            "user_type": "company",
+            "data": CompanyResponse.from_orm(user)
+        }
+
+    elif user_type == "employee":
+        user = db.query(Employee).filter(Employee.employee_id == user_id).first()
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Empleado no encontrado"
+            )
+        return {
+            "user_type": "employee",
+            "data": EmployeeResponse.from_orm(user)
+        }
+
+    raise HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail="Tipo de usuario desconocido"
+    )
