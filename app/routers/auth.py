@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+import os
 from typing import Annotated, Optional
 from fastapi import FastAPI, APIRouter, HTTPException, Request
 from pydantic import BaseModel, EmailStr, Field
@@ -19,7 +20,7 @@ router = APIRouter(
 )
 
 # configuracion de JWT para autenticación de usuarios
-SECRET_KEY = '11da7c3a77ffc45d9e2acf8764c0f41d4bdc893cd2ff88e2b9c77f40587e246c'
+SECRET_KEY = os.getenv("SECRET_KEY")
 ALGORITHM = 'HS256'
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
@@ -32,12 +33,12 @@ class CompanyCreate(BaseModel):
     email: EmailStr
     password: str = Field(..., min_length=6)
     company_name: str = Field(..., min_length=2, max_length=100)
-    phone_number: str = Field(None, regex="^\+?[0-9\s]*$")
+    phone_number: str = Field(None, pattern="^\+?[0-9\s]*$")
     is_active: bool = Field(default=True)
     country_of_residence: str = Field(None, description="Country where the company is located")
 
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "username": "tech_corp",
                 "email": "contact@techcorp.com",
@@ -50,32 +51,33 @@ class CompanyCreate(BaseModel):
         }
 
 
+from pydantic import BaseModel, Field, EmailStr
+
 class EmployeeCreate(BaseModel):
     username: str = Field(..., min_length=3, max_length=50)
     email: EmailStr
     password: str = Field(..., min_length=6)
     first_name: str = Field(..., min_length=1, max_length=50)
     last_name: str = Field(..., min_length=1, max_length=50)
-    nationality: Optional[str] = None
-    document_id: str = Field(..., description="Unique ID for employee (e.g., passport, national ID)")
-    phone_number: Optional[str] = None
-    gender: Optional[str] = Field(None, description="Gender of the employee")
-    birth_date: Optional[str] = Field(None, description="Date of birth (YYYY-MM-DD)")
-    city_of_residence: Optional[str] = None
-    country_of_residence: Optional[str] = None
-    profession: Optional[str] = None
-    position: Optional[str] = None
-    is_entrepreneur: Optional[bool] = False
-    entrepreneurship_name: Optional[str] = None
+    nationality: str = Field(None, max_length=50)
+    document_id: str = Field(..., description="Unique document ID")
+    phone_number: str = Field(None, pattern="^\+?[0-9\s]*$")
+    gender: str = Field(None, description="Gender of the employee")
+    birth_date: str = Field(None, description="Date of birth (YYYY-MM-DD)")
+    city_of_residence: str = Field(None, description="City of residence")
+    country_of_residence: str = Field(None, description="Country of residence")
+    profession: str = Field(None, description="Profession of the employee")
+    position: str = Field(None, description="Job position")
+    is_entrepreneur: bool = Field(default=False)
+    entrepreneurship_name: str = Field(None, description="Name of the entrepreneurship")
     is_active: bool = Field(default=True)
-    company_id: int = Field(..., description="ID of the company to which the employee belongs")
 
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "username": "john_doe",
                 "email": "johndoe@example.com",
-                "password": "securepassword123",
+                "password": "securepassword",
                 "first_name": "John",
                 "last_name": "Doe",
                 "nationality": "American",
@@ -87,10 +89,8 @@ class EmployeeCreate(BaseModel):
                 "country_of_residence": "USA",
                 "profession": "Software Engineer",
                 "position": "Developer",
-                "is_entrepreneur": True,
-                "entrepreneurship_name": "Tech Solutions Inc.",
-                "is_active": True,
-                "company_id": 1
+                "is_entrepreneur": False,
+                "is_active": True
             }
         }
 
@@ -207,18 +207,14 @@ def create_employee(
     current_user: dict = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
+    """
+    Endpoint para crear un empleado. Solo las compañías pueden realizar esta acción.
+    """
     # Verificar que el usuario autenticado es una compañía
     if current_user["user_type"] != "company":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only companies can create employees"
-        )
-
-    # Verificar que el company_id del empleado corresponde al usuario autenticado
-    if employee.company_id != current_user["user_id"]:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You can only create employees for your own company"
         )
 
     # Verificar si el correo electrónico ya está registrado
@@ -250,7 +246,7 @@ def create_employee(
         is_entrepreneur=employee.is_entrepreneur,
         entrepreneurship_name=employee.entrepreneurship_name if employee.is_entrepreneur else None,
         is_active=employee.is_active,
-        company_id=employee.company_id
+        company_id=current_user["user_id"]  # Usar el ID de la compañía autenticada
     )
 
     db.add(new_employee)
