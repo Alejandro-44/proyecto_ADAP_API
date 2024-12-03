@@ -34,3 +34,7 @@ app.include_router(admin.router)
 app.include_router(users.router)
 app.include_router(evaluation.router)
 app.include_router(dashboard.router)
+
+@app.get("/")
+async def root(request: Request):
+    return {"message": "Hello World"}
