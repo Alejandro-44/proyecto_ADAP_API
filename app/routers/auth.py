@@ -50,9 +50,6 @@ class CompanyCreate(BaseModel):
             }
         }
 
-
-from pydantic import BaseModel, Field, EmailStr
-
 class EmployeeCreate(BaseModel):
     username: str = Field(..., min_length=3, max_length=50)
     email: EmailStr
@@ -115,14 +112,15 @@ db_dependency = Annotated[Session, Depends(get_db)]
 
 def authenticate_user(db: Session, username: str, password: str):
     # Buscar en la tabla Company
-    user = db.query(Company).filter(Company.username == username).first()
+    user = db.query(Company).filter(Company.username == username and Company.is_active).first()
     user_type = "company"
 
     # Si no se encuentra en Company, buscar en Employee
     if not user:
         user = db.query(Employee).filter(Employee.username == username).first()
         user_type = "employee"
-
+    
+    assert user.is_active, "Usuario inactivo"
     # Si el usuario no existe o la contraseña es incorrecta, retornar False
     if not user or not bycrypt_context.verify(password, user.hashed_password):
         return None
@@ -245,7 +243,7 @@ def create_employee(
         position=employee.position,
         is_entrepreneur=employee.is_entrepreneur,
         entrepreneurship_name=employee.entrepreneurship_name if employee.is_entrepreneur else None,
-        is_active=employee.is_active,
+        is_active=True,  # Forzar que el empleado esté activo al crearlo
         company_id=current_user["user_id"]  # Usar el ID de la compañía autenticada
     )
 
@@ -257,7 +255,14 @@ def create_employee(
 
 @router.post('/token')
 async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
-    auth_data = authenticate_user(db, form_data.username, form_data.password)
+    try: 
+        auth_data = authenticate_user(db, form_data.username, form_data.password)
+    except AssertionError as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=str(e)
+        )
+    
     if not auth_data:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

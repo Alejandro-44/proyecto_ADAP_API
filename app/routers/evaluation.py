@@ -119,6 +119,15 @@ class EvaluationResponseSchema(BaseModel):
             }
         }
 
+class TemplateResponse(BaseModel):
+    id: int
+    title: str
+    description: str
+    created_date: datetime
+
+    class Config:
+        from_attributes = True  # Permite usar objetos SQLAlchemy directamente
+
 class CreateEvaluationTemplateRequest(BaseModel):
     title: str
     description: Optional[str] = None
@@ -146,6 +155,7 @@ class AssignEvaluationRequest(BaseModel):
 class AssignedEvaluationResponse(BaseModel):
     evaluation_id: int
     title: str
+    template_id: int
     assigned_date: Optional[str]
     due_date: Optional[str]
     completion_date: Optional[str]
@@ -370,6 +380,18 @@ def create_evaluation_template(
     # Obtener el ID de la compañía actual
     company_id = current_user["user_id"]
 
+    # Verificar si ya existe un template con el mismo título para esta compañía
+    existing_template = db.query(EvaluationTemplate).filter(
+        EvaluationTemplate.title == request.title,
+        EvaluationTemplate.company_id == company_id
+    ).first()
+
+    if existing_template:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="An evaluation template with this title already exists for your company."
+        )
+
     # Crear la plantilla de evaluación
     evaluation_template = EvaluationTemplate(
         title=request.title,
@@ -386,6 +408,48 @@ def create_evaluation_template(
         "message": "Evaluation template created successfully",
         "template_id": evaluation_template.id
     }
+
+@router.get("/templates", response_model=List[TemplateResponse], status_code=status.HTTP_200_OK)
+def get_templates_of_current_company(
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Endpoint para obtener la lista de templates de evaluación creados por la compañía actual.
+    """
+    # Verificar que el usuario autenticado sea de tipo 'company'
+    if current_user["user_type"] != "company":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access restricted to company users."
+        )
+
+    # Obtener el ID de la compañía actual
+    company_id = current_user["user_id"]
+
+    # Consultar los templates creados por la compañía
+    templates = db.query(EvaluationTemplate).filter(
+        EvaluationTemplate.company_id == company_id
+    ).all()
+
+    # Validar si no hay templates
+    if not templates:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No templates found for your company."
+        )
+
+    # Retornar la lista de templates en el formato requerido
+    return [
+        {
+            "id": template.id,
+            "title": template.title,
+            "description": template.description,
+            "created_date": template.created_date.isoformat(),
+        }
+        for template in templates
+    ]
+
 
 @router.post("/assign", status_code=status.HTTP_201_CREATED)
 def assign_evaluation_to_employees(
@@ -468,6 +532,7 @@ def get_assigned_evaluations(
     evaluations = [
         {
             "evaluation_id": assigned_evaluation.id,
+            "template_id": assigned_evaluation.template_id, 
             "title": assigned_evaluation.evaluation_template.title,  # Título desde EvaluationTemplate
             "assigned_date": assigned_evaluation.assigned_date.isoformat() if assigned_evaluation.assigned_date else None,
             "due_date": assigned_evaluation.due_date.isoformat() if assigned_evaluation.due_date else None,
