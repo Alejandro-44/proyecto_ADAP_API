@@ -21,7 +21,8 @@ origins = [
     "http://localhost:3000",  
     "http://127.0.0.1:3000",   
     "https://proyecto_adap_app.railway.internal",
-    "https://proyecto_adap_api.railway.internal"
+    "https://proyecto_adap_api.railway.internal",
+    "https://proyectoadapapp-production.up.railway.app"
 ]
 
 app.add_middleware(
