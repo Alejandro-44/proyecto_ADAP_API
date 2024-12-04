@@ -15,8 +15,6 @@ app = FastAPI(
     version="1.0"
 )
 
-# Redirigir automáticamente HTTP a HTTPS
-app.add_middleware(HTTPSRedirectMiddleware)
 
 # Configuración de CORS
 origins = [
