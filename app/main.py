@@ -7,6 +7,7 @@ from app.routers import auth, admin, users, evaluation, dashboard
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.httpsredirect import HTTPSRedirectMiddleware
 
 app = FastAPI(
     title="ADAP API",
@@ -14,14 +15,15 @@ app = FastAPI(
     version="1.0"
 )
 
+# Redirigir automáticamente HTTP a HTTPS
+app.add_middleware(HTTPSRedirectMiddleware)
+
 # Configuración de CORS
 origins = [
     "http://localhost:5173",  
     "http://127.0.0.1:5173",   
     "http://localhost:3000",  
-    "http://127.0.0.1:3000",   
-    "https://proyecto_adap_app.railway.internal",
-    "https://proyecto_adap_api.railway.internal",
+    "http://127.0.0.1:3000",
     "https://proyectoadapapp-production.up.railway.app",
     "https://proyectoadapapi-production.up.railway.app"
 ]
