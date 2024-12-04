@@ -20,6 +20,7 @@ origins = [
     "http://127.0.0.1:5173"   # Alternativa si usas localhost de otra forma
     "http://localhost:3000"   # Alternativa si usas localhost de otra forma
     "http://127.0.0.1:3000"   # Alternativa si usas localhost de otra forma
+    "https://proyecto_adap_app.railway.internal"   # dirección de deploy
 ]
 
 app.add_middleware(
