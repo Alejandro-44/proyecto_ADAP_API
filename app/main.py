@@ -18,6 +18,8 @@ app = FastAPI(
 origins = [
     "http://localhost:5173",  # Permitir tu cliente React
     "http://127.0.0.1:5173"   # Alternativa si usas localhost de otra forma
+    "http://localhost:3000"   # Alternativa si usas localhost de otra forma
+    "http://127.0.0.1:3000"   # Alternativa si usas localhost de otra forma
 ]
 
 app.add_middleware(
