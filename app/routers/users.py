@@ -147,7 +147,7 @@ async def get_employees_of_current_company(
         )
 
     # Obtener empleados de la compañía
-    employees = db.query(Employee).filter(Employee.company_id == company_id).all()
+    employees = db.query(Employee).filter((Employee.company_id == company_id) & (Employee.is_active == True)).all()
 
     # Retornar una lista vacía si no hay empleados en la compañía
     return employees

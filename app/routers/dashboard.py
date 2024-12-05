@@ -164,3 +164,46 @@ def generate_company_dashboard_url(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error generating dashboard URL: {str(e)}"
         )
+    
+@router.get("/generate_admin_dashboard_url", status_code=status.HTTP_200_OK)
+def generate_admin_dashboard(
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Endpoint para generar la URL embebida del dashboard para administradores en Metabase.
+    """
+    if not METABASE_SECRET_KEY or not METABASE_SITE_URL:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Metabase configuration is missing"
+        )
+
+    # Verificar que el usuario sea un administrador
+    if current_user["user_type"] != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access restricted to admins only."
+        )
+
+    try:
+        # Crear el payload para el token
+        payload = {
+            "resource": {"dashboard": 8}, 
+            "params": {}, # ID del dashboard para administradores
+            "exp": round(time.time()) + (60 * 100)  
+        }
+
+        # Generar el token JWT
+        token = jwt.encode(payload, METABASE_SECRET_KEY, algorithm="HS256")
+
+        # Construir la URL del iframe
+        iframe_url = f"{METABASE_SITE_URL}/embed/dashboard/{token}#bordered=true&titled=true"
+
+        return {"iframe_url": iframe_url}
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error generating dashboard URL: {str(e)}"
+        )

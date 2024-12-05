@@ -112,17 +112,32 @@ db_dependency = Annotated[Session, Depends(get_db)]
 
 def authenticate_user(db: Session, username: str, password: str):
     # Buscar en la tabla Company
-    user = db.query(Company).filter(Company.username == username and Company.is_active).first()
+    user = db.query(Company).filter(
+        (Company.username == username) | (Company.email == username)
+    ).first()
     user_type = "company"
 
     # Si no se encuentra en Company, buscar en Employee
     if not user:
-        user = db.query(Employee).filter(Employee.username == username).first()
+        user = db.query(Employee).filter(
+            (Employee.username == username) | (Employee.email == username)
+        ).first()
         user_type = "employee"
-    
-    assert user.is_active, "Usuario inactivo"
-    # Si el usuario no existe o la contraseña es incorrecta, retornar False
-    if not user or not bycrypt_context.verify(password, user.hashed_password):
+
+        # Si el username es "admin", ajustar el tipo de usuario
+        if user and user.username == "admin":
+            user_type = "admin"
+
+    # Si el usuario no existe, retornar None
+    if not user:
+        return None
+
+    # Si el usuario está inactivo, lanzar una excepción
+    if not user.is_active:
+        raise AssertionError("User is inactive")
+
+    # Verificar la contraseña
+    if not bycrypt_context.verify(password, user.hashed_password):
         return None
 
     # Retornar el usuario y el tipo
@@ -150,7 +165,7 @@ async def get_current_user(token: str = Depends(oauth2_bearer), db: Session = De
 
         if user_type == "company":
             user = db.query(Company).filter(Company.company_id == user_id).first()
-        elif user_type == "employee":
+        elif user_type == "employee" or user_type == "admin":
             user = db.query(Employee).filter(Employee.employee_id == user_id).first()
         else:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid user type")

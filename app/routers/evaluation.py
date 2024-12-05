@@ -465,7 +465,7 @@ def assign_evaluation_to_employees(
     if current_user["user_type"] != "company":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only companies can assign evaluations."
+            detail="Solo las compañías pueden asignar evaluaciones."
         )
 
     # Verificar que la plantilla de evaluación existe y pertenece a la compañía actual
@@ -477,7 +477,7 @@ def assign_evaluation_to_employees(
     if not template:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Evaluation template not found or does not belong to your company."
+            detail="Template no encontrado o no pertenece a la compañía actual."
         )
 
     # Validar y asignar la evaluación a cada empleado
@@ -491,7 +491,19 @@ def assign_evaluation_to_employees(
         if not employee:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Employee with ID {employee_id} not found or does not belong to your company."
+                detail=f"El empleado no fue encontrado como miembro de la organizacion"
+            )
+
+        # Verificar que no exista una evaluación previa asignada con el mismo template para este empleado
+        existing_assignment = db.query(EmployeeEvaluation).filter(
+            EmployeeEvaluation.employee_id == employee_id,
+            EmployeeEvaluation.template_id == request.template_id
+        ).first()
+
+        if existing_assignment:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"El miembro {employee_id} ya tiene una evaluación asignada con este template."
             )
 
         # Crear y asignar la evaluación al empleado
@@ -505,7 +517,8 @@ def assign_evaluation_to_employees(
     # Confirmar cambios en la base de datos
     db.commit()
 
-    return {"message": "Evaluations assigned successfully."}
+    return {"message": "Evualuaciones asignadas exitosamente."}
+
 
 
 @router.get("/assigned", response_model=List[AssignedEvaluationResponse])
