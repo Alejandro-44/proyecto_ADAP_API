@@ -243,7 +243,7 @@ def calculate_desempeno(employee_evaluation_id: int, db: Session):
         ("Des_10", .1223),
         ("Des_12", .1048),
         ("Des_6", .1045),
-        ("Des_5", .834),
+        ("Des_5", .0834),
     ])
 
     D3 = sum(get_response_score_by_code(employee_evaluation_id, code, db) * weight for code, weight in [

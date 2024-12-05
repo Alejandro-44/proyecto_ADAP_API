@@ -22,7 +22,7 @@ router = APIRouter(
 # configuracion de JWT para autenticación de usuarios
 SECRET_KEY = os.getenv("SECRET_KEY")
 ALGORITHM = 'HS256'
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
+ACCESS_TOKEN_EXPIRE_MINUTES = 600
 
 # configuracion de encriptación de contraseñas
 bycrypt_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
