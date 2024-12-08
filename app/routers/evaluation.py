@@ -190,7 +190,7 @@ def calculate_autoliderazgo(employee_evaluation_id: int, db: Session):
     ])
     F2 = get_response_score_by_code(employee_evaluation_id, "Auto_14", db) * .0137
     F3 = get_response_score_by_code(employee_evaluation_id, "Auto_4", db) * .0020
-    F4 = get_response_score_by_code(employee_evaluation_id, "Auto_7", db) * .1666
+    F4 = get_response_score_by_code(employee_evaluation_id, "Auto_7", db) * .1466
     F5 = sum(get_response_score_by_code(employee_evaluation_id, code, db) * weight for code, weight in [
         ("Auto_8", .0867),
         ("Auto_13", .1036)
@@ -208,14 +208,17 @@ def calculate_autoliderazgo(employee_evaluation_id: int, db: Session):
 
     F7 = sum(get_response_score_by_code(employee_evaluation_id, code, db) * weight for code, weight in [
         ("Auto_1", .1846),
+        ("Auto_2", .0641),
+        ("Auto_9", .1357)
+    ])
+    
+    F8 = sum(get_response_score_by_code(employee_evaluation_id, code, db) * weight for code, weight in [
         ("Auto_11", .2267),
         ("Auto_12", .1903)
     ])
-    F8 = get_response_score_by_code(employee_evaluation_id, "Auto_2", db) * .0641
 
     F9 = sum(get_response_score_by_code(employee_evaluation_id, code, db) * weight for code, weight in [
-        ("Auto_9", .1846),
-        ("Auto_18", .2267),
+        ("Auto_18", .1091),
         ("Auto_19", .0892)
     ])
     E3 = F7 + F8 + F9
